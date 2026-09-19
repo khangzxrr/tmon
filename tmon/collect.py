@@ -346,9 +346,11 @@ def parse_mdstat(text):
             name, state, rest = m.groups()
             parts = rest.split()
             level = parts[0] if parts and not re.match(r"\w+\[\d+\]", parts[0]) else "?"
-            members = re.findall(r"\w+\[\d+\](\(\w\))?", rest)
+            members = re.findall(r"(\w+)\[\d+\](\(\w\))?", rest)
+            flags = [flag for _, flag in members]
             cur = arrays[name] = {"state": state, "level": level, "disks": len(members), "working": None,
-                                  "failed": members.count("(F)"), "spares": members.count("(S)"),
+                                  "failed": flags.count("(F)"), "spares": flags.count("(S)"),
+                                  "failed_devs": [dev for dev, flag in members if flag == "(F)"],
                                   "status": "", "action": None, "progress": None}
         elif cur is not None:
             counts = re.search(r"\[(\d+)/(\d+)\]\s+\[([U_]+)\]", line)

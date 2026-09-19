@@ -63,6 +63,7 @@ class ParseTest(unittest.TestCase):
                           "md2": ("inactive", "?", 1, None, "")})
         self.assertEqual((a["md1"]["failed"], a["md1"]["action"], a["md1"]["progress"]), (1, "recovery", 8.5))
         self.assertEqual(a["md2"]["spares"], 1)
+        self.assertEqual((a["md1"]["failed_devs"], a["md0"]["failed_devs"]), (["sdc"], []))
         self.assertEqual(collect.parse_mdstat(""), {})
 
     def test_md_name(self):
@@ -162,10 +163,10 @@ class RenderTest(unittest.TestCase):
         self.md = {"/srv/md": self.arrays["md1"]}
         self.zfs = {"/srv/tank": dict(collect.parse_zpool_status(ZPOOL_RESILVER), pool="tank")}
         out = self.screen()
-        self.assertIn("MD fs      ■ raid5 · DEGRADED 2/3 [_UU] · recovery 8 %", out)
+        self.assertIn("MD fs      ■ raid5 · recovery 8 % · DEGRADED 2/3 [_UU]", out)
         self.assertIn("Tank fs    ■ tank DEGRADED · resilver 12 % · 2 data errors", out)
         self.assertIn("Scrub      never", out)
-        self.assertIn("mdadm /srv/md: degraded (2/3 disks, 1 failed)", out)
+        self.assertIn("mdadm /srv/md: degraded (2/3 disks, sdc failed)", out)
         self.assertIn("zfs pool tank is DEGRADED", out)
 
     def test_inactive_errors_and_missing(self):
@@ -200,7 +201,7 @@ class RenderTest(unittest.TestCase):
         self.cfg["storage"][0]["devices"] = 3
         self.md = {"/srv/md": m}
         out = self.screen()
-        self.assertIn("raid1 · 2/2 disks · expected 3 · check 40 %", out)
+        self.assertIn("raid1 · check 40 % · 2/2 disks · expected 3", out)
 
 
 class ConfigTest(unittest.TestCase):

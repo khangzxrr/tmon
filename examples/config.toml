@@ -48,6 +48,8 @@ temp_sensor = "nvme"        # hwmon name for a temperature next to the bar
 glob = ["/dev/disk/by-id/ata-*"]
 warn = 45                   # °C
 crit = 50
+compact_above = 4           # more disks than this: healthy ones share rows ("■ sda 38°"), only disks needing
+                            # attention (SMART failed, at/above warn) keep a full row with their serial number
 
 [ups]
 name = ""                   # NUT UPS, e.g. "myups@localhost" (upsc)

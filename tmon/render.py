@@ -110,7 +110,7 @@ def system_panel(f):
             row("Network", f"↓ {rate(f['rx']):>10}   ↑ {rate(f['tx']):>10}   {GRAY}{f['iface'] or ''}{RESET}")]
 
 
-def storage_panel(cfg, d):
+def storage_panel(cfg, d, width=60):
     lines = [title("STORAGE")]
     st, btrfs = d.get("storage"), d.get("btrfs")
     if st is None:
@@ -144,12 +144,30 @@ def storage_panel(cfg, d):
         errors = "errors unknown (root?)" if b["errors"] is None else "ERRORS" if b["errors"] else "no errors"
         lines.append(row(label, f"{dot(RED if broken else GREEN)} {b['profile']} · {count}"
                                 f"{' · DEGRADED' if degraded else ''} · {errors}"))
-    dk = cfg["disks"]
-    for disk in d.get("disks") or []:
+    return lines + disk_rows(cfg["disks"], d.get("disks") or [], width)
+
+
+def disk_rows(dk, disks, width):
+    """One row per disk; above `compact_above` disks, healthy ones share rows in a grid and only disks that need
+    attention (SMART failed, at or above the warning temperature) keep a full row with their serial number."""
+    def full(disk):
         color = GREEN if disk["health"] == "PASSED" else GRAY if disk["health"] in ("standby", "?") else RED
         health = "unknown (root?)" if disk["health"] == "?" else disk["health"]
-        lines.append(row(disk["dev"], f"{disk['serial']}   {temp(disk['temp'], dk['warn'], dk['crit'])}"
-                                      f"   {color}SMART {health}{RESET}"))
+        return row(disk["dev"], f"{disk['serial']}   {temp(disk['temp'], dk['warn'], dk['crit'])}"
+                                f"   {color}SMART {health}{RESET}")
+
+    if len(disks) <= dk["compact_above"]:
+        return [full(x) for x in disks]
+    attention = [x for x in disks if x["health"] == "FAILED" or (x["temp"] or 0) >= dk["warn"]]
+    fine = [x for x in disks if x not in attention]
+    cells = [(f"{x['dev']} {'—' if x['temp'] is None else x['temp']}°", GREEN if x["health"] == "PASSED" else GRAY)
+             for x in fine]
+    cell_w = max((len(c) for c, _ in cells), default=0) + 4  # "■ " + text + 2 spaces
+    per = max(1, (width - 12) // cell_w)
+    lines = [full(x) for x in attention]
+    for i in range(0, len(cells), per):
+        grid = "".join(f"{dot(color)} {text:<{cell_w - 2}}" for text, color in cells[i:i + per])
+        lines.append(row(f"{len(fine)} disks" if i == 0 else "", grid))
     return lines
 
 
@@ -162,12 +180,17 @@ def md_row(s, m):
     degraded = working < m["disks"] or m["failed"]
     wrong_count = s["devices"] and m["disks"] != s["devices"]
     color = RED if degraded or wrong_count else YELLOW if m["action"] else GREEN
-    status = f" [{m['status']}]" if degraded and m["status"] else ""
-    parts = [m["level"], f"DEGRADED {working}/{m['disks']}{status}" if degraded else f"{working}/{m['disks']} disks"]
-    if wrong_count:
-        parts.append(f"expected {s['devices']}")
+    where = ""
+    if degraded and m["status"]:
+        # small arrays: the whole map [U_]; big ones: the missing slots, numbered like `mdadm --detail` (RaidDevice)
+        missing = ",".join(str(i) for i, c in enumerate(m["status"]) if c == "_")
+        where = f" [{m['status']}]" if len(m["status"]) <= 6 else f" (slot {missing})" if missing else ""
+    parts = [m["level"]]
     if m["action"]:
         parts.append(f"{m['action']} {m['progress']:.0f} %")
+    parts.append(f"DEGRADED {working}/{m['disks']}{where}" if degraded else f"{working}/{m['disks']} disks")
+    if wrong_count:
+        parts.append(f"expected {s['devices']}")
     return f"{dot(color)} {' · '.join(parts)}"
 
 
@@ -346,7 +369,8 @@ def live_problems(cfg, d):
         elif m["state"] != "active":
             out.append(f"mdadm {path}: array {m['state']}")
         elif m["failed"] or (m["working"] is not None and m["working"] < m["disks"]):
-            failed = f", {m['failed']} failed" if m["failed"] else ""
+            names = ", ".join(m.get("failed_devs") or [])
+            failed = f", {names} failed" if names else f", {m['failed']} failed" if m["failed"] else ""
             out.append(f"mdadm {path}: degraded ({m['working']}/{m['disks']} disks{failed})")
     for path, z in (d.get("zfs") or {}).items():
         if "error" in z:
@@ -384,6 +408,34 @@ def banner_and_alerts(cfg, s):
     return banner, [f"   {RED}! {a}{RESET}" for a in h["fails"]] + [f"   {YELLOW}• {a}{RESET}" for a in h["warns"]]
 
 
+def layout_height(panels, two):
+    """Rows the panels take, with a blank row after each block (two panels side by side = one block)."""
+    if not two:
+        return sum(len(p) + 1 for p in panels)
+    return sum(max(len(p) for p in panels[i:i + 2]) + 1 for i in range(0, len(panels), 2))
+
+
+def shrink(panels, budget, two):
+    """Cut the tallest panel, one row at a time, until everything fits in `budget` rows: every panel keeps its title
+    and first line, and the cut rows are counted in a "… N more" line. A panel is never dropped silently."""
+    panels, hidden = [list(p) for p in panels], [0] * len(panels)
+    while layout_height(panels, two) > budget:
+        cuttable = [i for i, p in enumerate(panels) if len(p) >= 4]
+        if not cuttable:
+            break  # a terminal this small shows what fits
+        i = max(cuttable, key=lambda k: len(panels[k]))
+        p = panels[i]
+        if hidden[i]:
+            del p[-2]
+            hidden[i] += 1
+        else:
+            del p[-2:]
+            hidden[i] = 2
+            p.append("")
+        p[-1] = row("", f"{GRAY}… {hidden[i]} more rows{RESET}")
+    return panels
+
+
 def build(W, H, cfg, s, now, kiosk=False):
     """→ exactly H strings of exactly W visible characters (the last one W-1, so the terminal never scrolls)."""
     f, d = s["fast"], s["slow"]
@@ -397,10 +449,14 @@ def build(W, H, cfg, s, now, kiosk=False):
 
     two = W >= TWO_COLUMNS_MIN
     half = W // 2 if two else W
-    built = {"system": lambda: system_panel(f), "storage": lambda: storage_panel(cfg, d),
+    built = {"system": lambda: system_panel(f), "storage": lambda: storage_panel(cfg, d, half),
              "power": lambda: power_panel(cfg, d), "services": lambda: services_panel(cfg, d, half),
              "backups": lambda: backups_panel(cfg, d, now), "next": lambda: next_panel(d, now)}
     panels = [built[p]() for p in config_mod.panels(cfg)]
+    traffic = s.get("traffic")
+    # header, banner, a few alerts, blank, traffic title, footer: what's left is for the panels
+    budget = H - len(lines) - 1 - min(len(alerts), 3) - 1 - (1 if traffic else 0) - 1
+    panels = shrink(panels, budget, two)
     if two:
         pairs = [(panels[i], panels[i + 1] if i + 1 < len(panels) else []) for i in range(0, len(panels), 2)]
         blocks = [[fit(a, half) + b for a, b in zip(x + [""] * (len(y) - len(x)), y + [""] * (len(x) - len(y)))]
@@ -416,7 +472,6 @@ def build(W, H, cfg, s, now, kiosk=False):
         footer = f"{GRAY} q = quit   ·   r = check now{RESET}" if s["health_enabled"] else f"{GRAY} q = quit{RESET}"
 
     # Alerts and the traffic list share the free rows; alerts first, but the traffic list keeps at least 4.
-    traffic = s.get("traffic")
     panel_rows = sum(len(b) + 1 for b in blocks)
     free = max(H - len(lines) - 1 - 1 - panel_rows - (1 if traffic else 0) - 1, 0)  # banner, blank, traffic title, footer
     keep = 4 if traffic else 0
