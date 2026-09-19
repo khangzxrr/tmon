@@ -1,0 +1,22 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install coverage  # test tool only; tmon itself stays standard-library only
+      - name: tests with coverage ≥ 90 % (fail_under in pyproject.toml)
+        run: |
+          coverage run -m unittest -v
+          coverage report

@@ -149,11 +149,18 @@ Behind NAT hairpinning, LAN clients using the public name all appear as your rou
 ```bash
 python3 -m unittest           # from the repo root
 python3 -m tmon --demo --once --size 80x24
+pip install coverage && python3 -m coverage run -m unittest && python3 -m coverage report
 ```
+
+**Test coverage must stay ≥ 90 %** (lines and branches, `fail_under` in `pyproject.toml`): the
+[tests](.github/workflows/tests.yml) workflow fails below it on Python 3.11 and 3.13, and the `pre-push` hook checks it
+before every push. Collectors are tested against stub commands on `PATH` (`tests/test_sources.py`), the terminal modes
+with the terminal calls mocked (`tests/test_cli.py`).
 
 **Commit messages** start with a type — `feat`/`feature`, `fix`, `docs`, `refactor`, `perf`, `test`, `style`, `build`,
 `ci`, `chore`, `revert` — and an optional scope: `fix(traffic): follow rotated logs`; `!` before `:` marks a breaking
-change. Enable the local check once per clone with `git config core.hooksPath .githooks`; the
+change. Enable the local checks (commit message, and tests + coverage before a push) once per clone with
+`git config core.hooksPath .githooks`; the
 [commit messages](.github/workflows/commit-messages.yml) workflow rejects non-conforming commits on every push and pull
 request.
 

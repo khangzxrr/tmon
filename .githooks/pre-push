@@ -1,0 +1,10 @@
+#!/bin/sh
+# Before a push: the tests pass and cover ≥ 90 % (fail_under in pyproject.toml). CI checks the same.
+# Enable once per clone: git config core.hooksPath .githooks   ·   skip in an emergency: git push --no-verify
+cd "$(git rev-parse --show-toplevel)" || exit 1
+if python3 -c 'import coverage' 2>/dev/null; then
+  python3 -m coverage run -m unittest -q && python3 -m coverage report
+else
+  echo "pre-push: 'coverage' not installed (pip install coverage) — running tests without the 90 % check" >&2
+  python3 -m unittest -q
+fi

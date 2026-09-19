@@ -20,3 +20,14 @@ packages = ["tmon"]
 
 [tool.setuptools.dynamic]
 version = { attr = "tmon.__version__" }
+
+# Tests must cover at least 90 % of lines and branches: enforced by CI (.github/workflows/tests.yml) and the pre-push
+# hook. Run locally: python3 -m coverage run -m unittest && python3 -m coverage report
+[tool.coverage.run]
+branch = true
+source = ["tmon"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
