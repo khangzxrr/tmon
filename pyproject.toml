@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Full-screen terminal status monitor for home servers and NAS boxes: health, storage, UPS, containers, backups and live web traffic"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 authors = [{ name = "khangzxrr" }]
 classifiers = ["Environment :: Console", "Operating System :: POSIX :: Linux", "Topic :: System :: Monitoring"]
 

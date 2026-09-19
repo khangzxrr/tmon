@@ -8,6 +8,7 @@ import unittest
 from datetime import datetime
 from unittest import mock
 
+from tests import needs_tomllib
 from tmon import cli, config, demo
 
 ATTRS = [0, 0, 0, 0, 0, 0, []]
@@ -47,10 +48,13 @@ class Keys:
 
 
 class MainTest(unittest.TestCase):
-    def test_check_config(self):
+    @needs_tomllib
+    def test_check_config_file(self):
         code, out, _ = run_main("--check-config", "-c", "examples/config.toml")
         self.assertEqual(code, 0)
         self.assertIn("panels: system, storage", out)
+
+    def test_check_config(self):
         code, out, _ = run_main("--check-config", "--demo")
         self.assertIn("traffic", out)
         self.assertIn("health: demo-health-check", out)

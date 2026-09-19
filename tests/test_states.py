@@ -6,6 +6,7 @@ import unittest
 from datetime import datetime
 from unittest import mock
 
+from tests import needs_tomllib
 from tmon import config, demo, render, traffic
 
 
@@ -120,6 +121,7 @@ class ConfigErrorsTest(unittest.TestCase):
             with self.assertRaises(config.ConfigError):
                 config.merge(bad)
 
+    @needs_tomllib
     def test_bad_toml_and_env(self):
         with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
             f.write("[general\n")
