@@ -29,9 +29,12 @@ public_ip_url = ""          # e.g. "https://1.1.1.1/cdn-cgi/trace" to show the p
 label = "Data"
 path = "/srv/data"
 require_mount = true        # red "NOT MOUNTED" if nothing is mounted there
-btrfs = true                # RAID profile, device count, `btrfs device stats` errors, degraded mount
-devices = 2                 # expected btrfs devices (0 = don't check)
-scrub = true                # last `btrfs scrub` in the BACKUPS panel
+# RAID health: at most one of these three. Any filesystem works without them (just the usage bar).
+btrfs = true                # RAID profile, device count, `btrfs device stats` errors, degraded mount (root)
+mdadm = false               # md array mounted here, from /proc/mdstat: degraded, failed disks, rebuild/check progress
+zfs = false                 # pool of the dataset mounted here, from `zpool status`: health, data errors, resilver
+devices = 2                 # expected disks in the btrfs filesystem / md array (0 = don't check)
+scrub = true                # last scrub in the BACKUPS panel (btrfs or zfs)
 warn = 85                   # usage % turning yellow / red
 crit = 95
 
