@@ -130,11 +130,13 @@ TOML
 
 k3s)
   curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=metrics-server" sh -
+  # `kubectl wait` fails at once if nothing matches yet: the node registers and CoreDNS is created a few seconds
+  # after k3s starts. Wait for them to exist first.
+  exists() { for _ in $(seq 90); do [[ -n $(k3s kubectl "$@" -o name 2>/dev/null) ]] && return; sleep 2; done
+             fail "never appeared: kubectl get $*"; }
+  exists get nodes
   k3s kubectl wait --for=condition=Ready node --all --timeout=180s
-  for _ in $(seq 60); do # the CoreDNS pod only exists once k3s has applied its manifests
-    [[ -n $(k3s kubectl -n kube-system get pods -l k8s-app=kube-dns -o name) ]] && break
-    sleep 3
-  done
+  exists -n kube-system get pods -l k8s-app=kube-dns
   k3s kubectl -n kube-system wait --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
   config <<TOML
 [docker]

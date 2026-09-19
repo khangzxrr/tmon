@@ -226,7 +226,7 @@ enables/disables the kiosk service, checking the screen after each step. It is d
 outside CI.
 
 `main` is protected: changes land through pull requests once the `conventional`, `unittest (3.10)`,
-`unittest (3.11)` and `unittest (3.13)` checks pass on a branch that is up to date with `main`. No force-pushes.
+`unittest (3.11)`, `unittest (3.13)` and `real-world` (integration) checks pass on a branch that is up to date with `main`. No force-pushes.
 
 `tmon/render.py` is pure (snapshot in, lines out), `collect.py` gathers data in background threads, `traffic.py`
 follows the access log across rotations, `cli.py` owns the terminal. `demo.py` feeds the renderer fake data.
