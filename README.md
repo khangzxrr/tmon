@@ -219,6 +219,12 @@ change. Enable the local checks (commit message, and tests + coverage before a p
 [commit messages](.github/workflows/commit-messages.yml) workflow rejects non-conforming commits on every push and pull
 request.
 
+**Integration tests** ([integration](.github/workflows/integration.yml) workflow, on every pull request): on a
+throwaway VM, `tests/integration/run.sh` installs tmon with `install.sh`, builds real btrfs, mdadm and ZFS arrays on
+loop files, scrubs and breaks them, starts Podman containers and a k3s cluster with a pod that can't pull its image, and
+enables/disables the kiosk service, checking the screen after each step. It is destructive and refuses to run
+outside CI.
+
 `main` is protected: changes land through pull requests once the `conventional`, `unittest (3.10)`,
 `unittest (3.11)` and `unittest (3.13)` checks pass on a branch that is up to date with `main`. No force-pushes.
 
