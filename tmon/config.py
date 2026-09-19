@@ -15,7 +15,8 @@ DEFAULTS = {
     "storage": [{"label": "Root", "path": "/"}],
     "disks": {"glob": [], "warn": 45, "crit": 50, "compact_above": 4},
     "ups": {"name": "", "on_battery_note": ""},
-    "docker": {"enabled": "auto", "projects": {}},
+    "docker": {"enabled": "auto", "command": "docker", "projects": {}},
+    "kubernetes": {"enabled": "auto", "command": "", "kubeconfig": "", "group_by": "namespace", "groups": {}},
     "frigate": {"container": "", "url": "http://127.0.0.1:5000/api/stats"},
     "freshness": [],
     "timers": {"units": {}, "pattern": ""},
@@ -73,10 +74,20 @@ def normalize(cfg):
     if isinstance(d["glob"], str):
         d["glob"] = [d["glob"]] if d["glob"] else []
     docker = cfg["docker"]
+    if docker["command"] not in ("docker", "podman"):
+        raise ConfigError('[docker] command must be "docker" or "podman"')
     if docker["enabled"] == "auto":
-        docker["enabled"] = shutil.which("docker") is not None
+        docker["enabled"] = shutil.which(docker["command"]) is not None
     elif not isinstance(docker["enabled"], bool):
         raise ConfigError('[docker] enabled must be true, false or "auto"')
+    k8s = cfg["kubernetes"]
+    if k8s["group_by"] not in ("namespace", "app"):
+        raise ConfigError('[kubernetes] group_by must be "namespace" or "app"')
+    if k8s["enabled"] == "auto":
+        # Only a cluster running on this machine: a kubectl pointing at some remote cluster is not "this server".
+        k8s["enabled"] = local_cluster() is not None
+    elif not isinstance(k8s["enabled"], bool):
+        raise ConfigError('[kubernetes] enabled must be true, false or "auto"')
     if cfg["traffic"]["format"] not in ("caddy", "combined"):
         raise ConfigError('[traffic] format must be "caddy" or "combined"')
     for s in cfg["storage"]:
@@ -96,6 +107,19 @@ def normalize(cfg):
         except ValueError:
             raise ConfigError(f'[general] night must look like "23:00-06:00", got {night!r}') from None
     return cfg
+
+
+K3S_KUBECONFIG = "/etc/rancher/k3s/k3s.yaml"
+KUBEADM_KUBECONFIG = "/etc/kubernetes/admin.conf"
+
+
+def local_cluster():
+    """"k3s" or "kubeadm" when this machine runs a Kubernetes control plane, else None."""
+    if shutil.which("k3s") and os.path.exists(K3S_KUBECONFIG):
+        return "k3s"
+    if os.path.exists(KUBEADM_KUBECONFIG):
+        return "kubeadm"
+    return None
 
 
 def parse_night(night):
@@ -134,7 +158,7 @@ def panels(cfg):
         out.append("storage")
     if cfg["ups"]["name"]:
         out.append("power")
-    if cfg["docker"]["enabled"] or cfg["frigate"]["container"]:
+    if cfg["docker"]["enabled"] or cfg["kubernetes"]["enabled"] or cfg["frigate"]["container"]:
         out.append("services")
     if cfg["freshness"] or any(s["scrub"] for s in cfg["storage"]):
         out.append("backups")

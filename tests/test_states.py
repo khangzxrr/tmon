@@ -69,16 +69,16 @@ class RenderStatesTest(unittest.TestCase):
         self.assertIn("Scrub Backup never", out)
 
     def test_docker_auto_groups_and_empty(self):
-        cfg = dict(self.cfg, docker={"enabled": True, "projects": {}})
+        cfg = dict(self.cfg, docker={"enabled": True, "command": "docker", "projects": {}})
         self.d["containers"] = [["web", "web-1", "running", "Up (health: starting)"], ["", "lonely", "exited", "x"]]
         out = text(cfg, self.s)
         self.assertIn("■ web", out)
         self.assertIn("■ lonely", out)
         self.d["containers"] = []
         self.assertIn("no containers", text(cfg, self.s))
-        self.assertNotIn("SERVICES", text(dict(cfg, docker={"enabled": False, "projects": {}},
+        self.assertNotIn("SERVICES", text(dict(cfg, docker={"enabled": False, "command": "docker", "projects": {}},
                                                frigate={"container": ""}), self.s))
-        self.assertIn(" SERVICES", text(dict(cfg, docker={"enabled": False, "projects": {}}), self.s))
+        self.assertIn(" SERVICES", text(dict(cfg, docker={"enabled": False, "command": "docker", "projects": {}}), self.s))
 
     def test_live_problems(self):
         cfg = self.cfg

@@ -4,6 +4,7 @@ import ipaddress
 import json
 import os
 import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -12,6 +13,7 @@ import time
 import urllib.request
 from datetime import datetime
 
+from . import config
 from .traffic import Traffic
 
 ANSI = re.compile(r"\033\[[0-9;?]*[A-Za-z]")
@@ -111,6 +113,8 @@ class Collector(threading.Thread):
             self.jobs.append((10, self.ups))
         if c["docker"]["enabled"]:
             self.jobs.append((10, self.containers))
+        if c["kubernetes"]["enabled"]:
+            self.jobs.append((15, self.kubernetes))
         if c["frigate"]["container"]:
             self.jobs.append((30, self.cameras))
         if c["timers"]["units"] or c["timers"]["pattern"]:
@@ -184,23 +188,38 @@ class Collector(threading.Thread):
         self.data["ups"] = dict(l.split(": ", 1) for l in out.splitlines() if ": " in l) or None
 
     def containers(self):
-        fmt = '{{.Label "com.docker.compose.project"}}\t{{.Names}}\t{{.State}}\t{{.Status}}'
+        command = self.cfg["docker"]["command"]
+        fmt = "json" if command == "podman" else \
+            '{{.Label "com.docker.compose.project"}}\t{{.Names}}\t{{.State}}\t{{.Status}}'
         try:
-            p = subprocess.run(["docker", "ps", "-a", "--format", fmt], stdin=subprocess.DEVNULL, capture_output=True,
+            p = subprocess.run([command, "ps", "-a", "--format", fmt], stdin=subprocess.DEVNULL, capture_output=True,
                                text=True, timeout=20)
         except (OSError, subprocess.TimeoutExpired) as e:
-            log(f"docker: {e}")
+            log(f"{command}: {e}")
             p = None
         if p is None or p.returncode:
             if p is not None:
-                log(f"docker: {p.stderr.strip()}")
+                log(f"{command}: {p.stderr.strip()}")
             self.data["containers"] = None
+        elif command == "podman":
+            self.data["containers"] = parse_podman(p.stdout)
         else:
             self.data["containers"] = [l.split("\t") for l in p.stdout.splitlines() if l.count("\t") == 3]
 
+    def kubernetes(self):
+        cmd = kubectl(self.cfg["kubernetes"])
+        k = self.cfg["kubernetes"]
+        try:
+            pods = json.loads(run(*cmd, "get", "pods", "--all-namespaces", "-o", "json", timeout=30))
+            nodes = json.loads(run(*cmd, "get", "nodes", "-o", "json", timeout=30))
+        except ValueError:
+            self.data["k8s"] = None
+            return
+        self.data["k8s"] = {"pods": parse_pods(pods, k["group_by"]), "nodes": parse_nodes(nodes)}
+
     def cameras(self):
         f = self.cfg["frigate"]
-        out = run("docker", "exec", f["container"], "curl", "-s", "--max-time", "5", f["url"])
+        out = run(self.cfg["docker"]["command"], "exec", f["container"], "curl", "-s", "--max-time", "5", f["url"])
         try:
             self.data["cameras"] = {n: c.get("camera_fps", 0) for n, c in json.loads(out)["cameras"].items()}
         except (ValueError, KeyError, AttributeError):
@@ -315,6 +334,99 @@ def newest(f):
         except (ValueError, OSError):
             pass  # e.g. "<date>.partial" = still running or interrupted
     return max(times, default=None)
+
+
+def parse_podman(out):
+    """`podman ps -a --format json` → rows like docker's: [compose project, name, state, status]."""
+    try:
+        items = json.loads(out or "[]")
+    except ValueError:
+        return None
+    rows = []
+    for c in items:
+        labels = c.get("Labels") or {}
+        project = labels.get("com.docker.compose.project") or labels.get("io.podman.compose.project") or ""
+        names = c.get("Names") or [c.get("Id", "?")[:12]]
+        rows.append([project, names[0], c.get("State", "?"), c.get("Status") or c.get("State", "")])
+    return rows
+
+
+def kubectl(k):
+    """The kubectl command for [kubernetes]: as configured, `k3s kubectl` on a k3s server, else kubectl (with the
+    kubeadm admin kubeconfig on a kubeadm control plane)."""
+    if k["command"]:
+        cmd = shlex.split(k["command"])
+    else:
+        cmd = ["k3s", "kubectl"] if config.local_cluster() == "k3s" else ["kubectl"]
+    kubeconfig = k["kubeconfig"] or (config.KUBEADM_KUBECONFIG if not k["command"] and config.local_cluster() ==
+                                     "kubeadm" and not os.environ.get("KUBECONFIG") else "")
+    return cmd + (["--kubeconfig", kubeconfig] if kubeconfig else []) + ["--request-timeout=20s"]
+
+
+# A pod waiting for one of these will not get better by itself.
+BAD_WAITING = {"CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull", "InvalidImageName", "CreateContainerError",
+               "CreateContainerConfigError", "RunContainerError"}
+NOT_READY_S = 300  # a pod that is still not ready after this is a problem, not "starting"
+
+
+def k8s_time(ts):
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except (AttributeError, ValueError):
+        return None
+
+
+def pod_state(pod, now=None):
+    """→ (state, status) in the docker vocabulary ("running"/"starting"… or "broken" + reason), None = ignore."""
+    st = pod.get("status") or {}
+    phase = st.get("phase")
+    if phase == "Succeeded" or st.get("reason") == "Evicted":
+        return None  # finished Jobs and evicted leftovers are not running services
+    containers = st.get("containerStatuses") or []
+    waiting = [c["state"]["waiting"].get("reason", "") for c in containers + (st.get("initContainerStatuses") or [])
+               if "waiting" in (c.get("state") or {})]
+    bad = [r for r in waiting if r in BAD_WAITING]
+    if phase == "Failed":
+        return "broken", st.get("reason") or "Failed"
+    if bad:
+        return "broken", bad[0]
+    if phase == "Running" and containers and all(c.get("ready") for c in containers):
+        return "running", "Up"
+    started = k8s_time(st.get("startTime"))
+    if started is not None and (now or time.time()) - started > NOT_READY_S:
+        return "broken", "not ready" if phase == "Running" else phase or "Pending"
+    return "running", "starting"
+
+
+def pod_group(pod, group_by):
+    meta = pod.get("metadata") or {}
+    if group_by == "namespace":
+        return meta.get("namespace", "?")
+    labels = meta.get("labels") or {}
+    owners = meta.get("ownerReferences") or [{}]
+    return (labels.get("app.kubernetes.io/name") or labels.get("app") or labels.get("k8s-app")
+            or owners[0].get("name") or meta.get("name", "?"))
+
+
+def parse_pods(data, group_by="namespace", now=None):
+    """kubectl get pods -A -o json → rows [group, namespace/name, state, status] (finished pods left out)."""
+    rows = []
+    for pod in data.get("items") or []:
+        state = pod_state(pod, now)
+        if state:
+            meta = pod.get("metadata") or {}
+            rows.append([pod_group(pod, group_by), f"{meta.get('namespace', '?')}/{meta.get('name', '?')}", *state])
+    return rows
+
+
+def parse_nodes(data):
+    """kubectl get nodes -o json → [(name, ready)]"""
+    out = []
+    for node in data.get("items") or []:
+        conditions = (node.get("status") or {}).get("conditions") or []
+        ready = any(c.get("type") == "Ready" and c.get("status") == "True" for c in conditions)
+        out.append(((node.get("metadata") or {}).get("name", "?"), ready))
+    return out
 
 
 def read_mounts():

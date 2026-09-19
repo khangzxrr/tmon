@@ -78,7 +78,8 @@ Panels call system tools only when they are configured; a missing tool shows `no
 
 | Panel | Tool | Debian / Ubuntu | Arch | Fedora |
 |---|---|---|---|---|
-| Services, Cameras | `docker` | `docker.io` (or Docker's repo) | `docker` | Docker's repo |
+| Services, Cameras | `docker` or `podman` | `docker.io` / `podman` | `docker` / `podman` | Docker's repo / `podman` |
+| Services: Kubernetes | `kubectl` (k3s brings its own) | k3s, `kubectl` | k3s, `kubectl` | k3s, `kubectl` |
 | Power | `upsc` | `nut-client` | `nut` | `nut-client` |
 | Storage: SMART | `smartctl` | `smartmontools` | `smartmontools` | `smartmontools` |
 | Storage: btrfs, Scrub | `btrfs` | `btrfs-progs` | `btrfs-progs` | `btrfs-progs` |
@@ -121,7 +122,7 @@ Edit `/etc/tmon/config.toml` (or `~/.config/tmon/config.toml`, `$TMON_CONFIG`, `
 | System | always | `/proc`, `/sys` (CPU %, load, memory, swap, CPU temperature, default-route network speed) |
 | Storage | `[[storage]]` / `[disks]` (a grid above `compact_above` disks) | `statvfs`, `/proc/mounts` (any filesystem); RAID health from `btrfs filesystem show/df` + `btrfs device stats --check`, `/proc/mdstat` (mdadm) or `zpool status` (ZFS); `smartctl -H -A` |
 | Power | `[ups] name` | `upsc` (Network UPS Tools) |
-| Services | Docker installed / `[frigate]` | `docker ps -a` grouped by compose project; Frigate `/api/stats` fps per camera |
+| Services | Docker or Podman installed / a local Kubernetes cluster / `[frigate]` | `docker ps -a` / `podman ps -a` grouped by compose project; `kubectl get pods,nodes` grouped by namespace or app; Frigate `/api/stats` fps per camera |
 | Backups | `[[freshness]]` / `scrub = true` | newest file matching a glob, or a stamp file; `btrfs scrub status` / `zpool status` |
 | Next | `[timers]` | `systemctl list-timers` |
 | Traffic | `[traffic] access_log` | Caddy JSON or nginx/Apache "combined" access log |
@@ -139,7 +140,8 @@ curl -fs http://127.0.0.1:8080/health >/dev/null && ok "app answers" || fail "ap
 ```
 
 Without a health command, the banner reports what tmon sees itself: stopped or unhealthy containers (and configured
-compose projects with no containers), UPS on battery, unmounted or degraded filesystems, btrfs device errors,
+compose projects with no containers), Kubernetes nodes NotReady and pods crash-looping, failing to pull, failed or
+not ready after 5 minutes, UPS on battery, unmounted or degraded filesystems, btrfs device errors,
 degraded or inactive md arrays, ZFS pools that aren't ONLINE or have data errors, failed SMART.
 
 **Many disks.** Up to `compact_above` (4) disks, each gets a row with serial, temperature and SMART status. Above
