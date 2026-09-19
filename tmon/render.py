@@ -229,9 +229,10 @@ def stack_color(items):
     return YELLOW if any("starting" in status for *_, status in items) else GREEN
 
 
-def container_groups(cfg, containers):
-    """[(label, [containers])]: the configured compose projects, or every project + standalone containers."""
-    projects = cfg["docker"]["projects"]
+def container_groups(cfg, containers, projects=None):
+    """[(label, [containers])]: the configured groups (compose projects, k8s namespaces/apps), or every group +
+    standalone containers."""
+    projects = cfg["docker"]["projects"] if projects is None else projects
     if projects:
         return [(label, [c for c in containers if c[0] == p]) for p, label in projects.items()]
     names = sorted({c[0] for c in containers if c[0]})
@@ -240,23 +241,35 @@ def container_groups(cfg, containers):
 
 
 def services_panel(cfg, d, width):
-    lines = []
+    def cells(groups):
+        cw = max((len(label) for label, _ in groups), default=8) + 3
+        per = max(1, (width - 1) // cw)
+        out = [f"{dot(stack_color(items))} {label:<{cw - 2}}" for label, items in groups]
+        return [" " + "".join(out[i:i + per]) for i in range(0, len(out), per)]
+
+    lines = [title("SERVICES")]
     if cfg["docker"]["enabled"]:
-        containers = d.get("containers")
+        containers, name = d.get("containers"), cfg["docker"]["command"]
         if containers is None:
-            lines += [title("SERVICES"), row("Docker", f"{RED}! docker not answering{RESET}")]
+            lines.append(row(name.capitalize(), f"{RED}! {name} not answering{RESET}"))
         else:
             running = sum(c[2] == "running" for c in containers)
-            lines.append(title("SERVICES", f"   {running}/{len(containers)} containers running"))
+            lines[0] = title("SERVICES", f"   {running}/{len(containers)} containers running")
             groups = container_groups(cfg, containers)
-            cw = max((len(label) for label, _ in groups), default=8) + 3
-            per = max(1, (width - 1) // cw)
-            cells = [f"{dot(stack_color(items))} {label:<{cw - 2}}" for label, items in groups]
-            lines += [" " + "".join(cells[i:i + per]) for i in range(0, len(cells), per)]
-            if not groups:
-                lines.append(row("", f"{GRAY}no containers{RESET}"))
-    else:
-        lines.append(title("SERVICES"))
+            lines += cells(groups) if groups else [row("", f"{GRAY}no containers{RESET}")]
+    if cfg["kubernetes"]["enabled"]:
+        k8s = d.get("k8s")
+        if k8s is None:
+            lines.append(row("Kubernetes", f"{RED}! kubectl not answering{RESET}" if "k8s" in d else NO_DATA))
+        else:
+            pods, nodes = k8s["pods"], k8s["nodes"]
+            ready = sum(p[3] == "Up" for p in pods)
+            nodes_ok = sum(ok for _, ok in nodes)
+            color = RED if nodes_ok < len(nodes) or any(p[2] != "running" for p in pods) else \
+                YELLOW if ready < len(pods) else GREEN
+            lines.append(row("Kubernetes", f"{dot(color)} nodes {nodes_ok}/{len(nodes)} Ready · "
+                                           f"{ready}/{len(pods)} pods ready"))
+            lines += cells(container_groups(cfg, pods, cfg["kubernetes"]["groups"]))
     if cfg["frigate"]["container"]:
         cams = d.get("cameras")
         lines.append(row("Cameras", NO_DATA if cams is None else "   ".join(
@@ -352,7 +365,17 @@ def live_problems(cfg, d):
             if not any(c[0] == p for c in containers):
                 out.append(f"{label}: no containers")
     elif cfg["docker"]["enabled"] and "containers" in d:
-        out.append("docker not answering")
+        out.append(f"{cfg['docker']['command']} not answering")
+    if cfg["kubernetes"]["enabled"] and "k8s" in d:
+        k8s = d["k8s"]
+        if k8s is None:
+            out.append("kubernetes: kubectl not answering")
+        else:
+            out += [f"node {name} NotReady" for name, ok in k8s["nodes"] if not ok]
+            out += [f"pod {p[1]}: {p[3]}" for p in k8s["pods"] if p[2] != "running"]
+            for g, label in cfg["kubernetes"]["groups"].items():
+                if not any(p[0] == g for p in k8s["pods"]):
+                    out.append(f"{label}: no pods")
     if cfg["ups"]["name"] and "OB" in (d.get("ups") or {}).get("ups.status", "").split():
         out.append("UPS on battery")
     for e in d.get("storage") or []:

@@ -56,10 +56,22 @@ name = ""                   # NUT UPS, e.g. "myups@localhost" (upsc)
 on_battery_note = ""        # shown after "ON BATTERY", e.g. "shutdown in 5 min"
 
 [docker]
-enabled = "auto"            # true / false / "auto" (= if the docker command exists)
+enabled = "auto"            # true / false / "auto" (= if the command below exists)
+command = "docker"          # or "podman" (podman-compose projects are grouped the same way)
 # Compose project → label, in screen order. Empty = every compose project plus standalone containers.
 # A group is green when all its containers run, yellow while a health check is starting, red otherwise.
 projects = {}               # e.g. { nextcloud = "Nextcloud", immich = "Immich", caddy = "Caddy" }
+
+[kubernetes]
+# Pods and nodes from kubectl (k3s, kubeadm, microk8s, …), shown next to the Docker containers.
+enabled = "auto"            # "auto" = only when this machine runs the cluster (k3s, or kubeadm's admin.conf); a
+                            # kubectl pointing at a remote cluster is ignored. true = use the kubectl below anyway.
+command = ""                # "" = `k3s kubectl` on k3s, else kubectl; e.g. "microk8s kubectl"
+kubeconfig = ""             # "" = k3s's own / kubeadm's admin.conf / $KUBECONFIG
+group_by = "namespace"      # or "app" (app.kubernetes.io/name, app, k8s-app label, or the owner's name)
+# Group → label, in screen order. Empty = every group. Green = all pods running and ready, yellow = starting,
+# red = CrashLoopBackOff, image pull errors, failed, or not ready after 5 minutes. Finished Jobs are ignored.
+groups = {}                 # e.g. { "kube-system" = "System", cloud = "Cloud" }
 
 [frigate]
 container = ""              # Frigate container name → frames per second per camera
