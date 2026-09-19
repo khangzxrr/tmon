@@ -48,6 +48,7 @@ browser — ≈ 15 MB RAM, ~0 % CPU) with the monitor switched off at night.
 - **Python standard library only.** Nothing to `pip install`; installs as a single executable file. Any Linux
   distribution (it reads `/proc` and `/sys`): [requirements](#requirements).
 - **Read-only.** It runs `docker ps`, `upsc`, `smartctl -n standby` (never wakes a sleeping disk), `btrfs … show/stats`,
+  `zpool status`,
   `systemctl list-timers` and your health-check command; it changes nothing.
 - **Degrades gracefully.** A missing tool or permission shows `no data` in that row and a line in the journal/stderr.
   Run it as root for SMART and btrfs error counters.
@@ -81,6 +82,8 @@ Panels call system tools only when they are configured; a missing tool shows `no
 | Power | `upsc` | `nut-client` | `nut` | `nut-client` |
 | Storage: SMART | `smartctl` | `smartmontools` | `smartmontools` | `smartmontools` |
 | Storage: btrfs, Scrub | `btrfs` | `btrfs-progs` | `btrfs-progs` | `btrfs-progs` |
+| Storage: ZFS, Scrub | `zpool` | `zfsutils-linux` | `zfs-utils` (AUR / archzfs) | `zfs` (OpenZFS repo) |
+| Storage: mdadm | none (`/proc/mdstat`) | | | |
 | Next | `systemctl` | systemd | systemd | systemd |
 | Kiosk mode | `setterm`, `setfont` | `util-linux`, `kbd` | `util-linux`, `kbd` | `util-linux`, `kbd` |
 
@@ -116,10 +119,10 @@ Edit `/etc/tmon/config.toml` (or `~/.config/tmon/config.toml`, `$TMON_CONFIG`, `
 |---|---|---|
 | Banner + alerts | always | `[health] command` output, else tmon's own findings (below) |
 | System | always | `/proc`, `/sys` (CPU %, load, memory, swap, CPU temperature, default-route network speed) |
-| Storage | `[[storage]]` / `[disks]` | `statvfs`, `/proc/mounts`; `btrfs filesystem show/df`, `btrfs device stats --check`; `smartctl -H -A` |
+| Storage | `[[storage]]` / `[disks]` | `statvfs`, `/proc/mounts` (any filesystem); RAID health from `btrfs filesystem show/df` + `btrfs device stats --check`, `/proc/mdstat` (mdadm) or `zpool status` (ZFS); `smartctl -H -A` |
 | Power | `[ups] name` | `upsc` (Network UPS Tools) |
 | Services | Docker installed / `[frigate]` | `docker ps -a` grouped by compose project; Frigate `/api/stats` fps per camera |
-| Backups | `[[freshness]]` / `scrub = true` | newest file matching a glob, or a stamp file; `btrfs scrub status` |
+| Backups | `[[freshness]]` / `scrub = true` | newest file matching a glob, or a stamp file; `btrfs scrub status` / `zpool status` |
 | Next | `[timers]` | `systemctl list-timers` |
 | Traffic | `[traffic] access_log` | Caddy JSON or nginx/Apache "combined" access log |
 
@@ -137,7 +140,7 @@ curl -fs http://127.0.0.1:8080/health >/dev/null && ok "app answers" || fail "ap
 
 Without a health command, the banner reports what tmon sees itself: stopped or unhealthy containers (and configured
 compose projects with no containers), UPS on battery, unmounted or degraded filesystems, btrfs device errors,
-failed SMART.
+degraded or inactive md arrays, ZFS pools that aren't ONLINE or have data errors, failed SMART.
 
 **Traffic.** The last `window_minutes` of requests, newest first, one line per distinct request: time, site (first
 label of the host name), method, path, `×N`, status (green / yellow 4xx / red 5xx), client IP and `LAN` / `internet`.

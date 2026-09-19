@@ -24,7 +24,8 @@ DEFAULTS = {
 }
 # Defaults for the entries of list sections ([[storage]], [[freshness]]).
 ENTRY_DEFAULTS = {
-    "storage": {"label": "", "path": "", "require_mount": False, "btrfs": False, "devices": 0, "scrub": False,
+    "storage": {"label": "", "path": "", "require_mount": False, "btrfs": False, "mdadm": False, "zfs": False,
+                "devices": 0, "scrub": False,
                 "temp_sensor": "", "warn": 85, "crit": 95},
     "freshness": {"label": "", "glob": "", "stamp": "", "name_format": "", "max_age_hours": 26.0, "level": "crit"},
 }
@@ -78,6 +79,11 @@ def normalize(cfg):
         raise ConfigError('[docker] enabled must be true, false or "auto"')
     if cfg["traffic"]["format"] not in ("caddy", "combined"):
         raise ConfigError('[traffic] format must be "caddy" or "combined"')
+    for s in cfg["storage"]:
+        if s["btrfs"] + s["mdadm"] + s["zfs"] > 1:
+            raise ConfigError(f"[[storage]] {s['label']!r}: set only one of btrfs, mdadm, zfs")
+        if s["scrub"] and not (s["btrfs"] or s["zfs"]):
+            raise ConfigError(f"[[storage]] {s['label']!r}: scrub = true needs btrfs = true or zfs = true")
     for f in cfg["freshness"]:
         if bool(f["glob"]) == bool(f["stamp"]):
             raise ConfigError(f"[[freshness]] {f['label']!r}: set exactly one of glob or stamp")

@@ -119,8 +119,10 @@ class Collector(threading.Thread):
             self.jobs.append((120, self.disks))
         if c["freshness"]:
             self.jobs.append((120, self.freshness))
-        if any(s["scrub"] for s in c["storage"]):
+        if any(s["scrub"] and s["btrfs"] for s in c["storage"]):
             self.jobs.append((600, self.scrub))
+        if any(s["zfs"] for s in c["storage"]):
+            self.jobs.append((60, self.zfs))
 
     def run_all(self):
         for _, job in self.jobs:
@@ -153,10 +155,7 @@ class Collector(threading.Thread):
         self.data["network"] = {"lan": lan_ip(), "public": public}
 
     def storage(self):
-        mounts = {}
-        for l in read("/proc/mounts").splitlines():
-            f = l.split()
-            mounts[f[1].replace("\\040", " ")] = f[3].split(",")
+        mounts = read_mounts()
         out = []
         for s in self.cfg["storage"]:
             e = {"label": s["label"], "path": s["path"], "missing": False, "degraded": False, "used": 0, "total": 0,
@@ -167,9 +166,18 @@ class Collector(threading.Thread):
                 st = os.statvfs(s["path"])
                 e["used"] = (st.f_blocks - st.f_bfree) * st.f_frsize
                 e["total"] = e["used"] + st.f_bavail * st.f_frsize
-                e["degraded"] = "degraded" in mounts.get(s["path"], [])
+                e["degraded"] = "degraded" in mounts.get(s["path"], ("", "", []))[2]
             out.append(e)
         self.data["storage"] = out
+        if any(s["mdadm"] for s in self.cfg["storage"]):  # /proc/mdstat: cheap, no root needed
+            arrays = parse_mdstat(read("/proc/mdstat"))
+            md = {}
+            for s in self.cfg["storage"]:
+                if s["mdadm"]:
+                    name = md_name(mounts.get(s["path"], ("",))[0])
+                    md[s["path"]] = arrays.get(name) or {"error": f"no md array mounted on {s['path']}" if not name
+                                                         else f"{name} not in /proc/mdstat"}
+            self.data["mdadm"] = md
 
     def ups(self):
         out = run("upsc", self.cfg["ups"]["name"], timeout=10)
@@ -243,7 +251,22 @@ class Collector(threading.Thread):
 
     def scrub(self):
         self.data["scrub"] = {s["path"]: parse_scrub(run("btrfs", "scrub", "status", s["path"]))
-                              for s in self.cfg["storage"] if s["scrub"]}
+                              for s in self.cfg["storage"] if s["scrub"] and s["btrfs"]}
+
+    def zfs(self):
+        mounts, pools = read_mounts(), {}
+        for s in self.cfg["storage"]:
+            if not s["zfs"]:
+                continue
+            source, fstype, _ = mounts.get(s["path"], ("", "", []))
+            if fstype != "zfs":
+                pools[s["path"]] = {"error": f"no ZFS dataset mounted on {s['path']}"}
+                continue
+            pool = source.split("/")[0]
+            out = run("zpool", "status", pool)
+            pools[s["path"]] = dict(parse_zpool_status(out), pool=pool) if out else \
+                {"error": f"zpool status {pool} failed", "pool": pool}
+        self.data["zfs"] = pools
 
 
 def parse_public_ip(body):
@@ -292,6 +315,86 @@ def newest(f):
         except (ValueError, OSError):
             pass  # e.g. "<date>.partial" = still running or interrupted
     return max(times, default=None)
+
+
+def read_mounts():
+    """mount point → (source, fstype, options)"""
+    mounts = {}
+    for l in read("/proc/mounts").splitlines():
+        f = l.split()
+        if len(f) >= 4:
+            mounts[f[1].replace("\\040", " ")] = (f[0], f[2], f[3].split(","))
+    return mounts
+
+
+def md_name(source):
+    """/dev/md0, /dev/md/data (→ /dev/md127) → "md0" / "md127"; None if not an md device."""
+    if not source.startswith("/dev/md"):
+        return None
+    return os.path.basename(os.path.realpath(source))
+
+
+MD_ARRAY = re.compile(r"^(md\d+)\s*:\s*(\S+)\s*(.*)$")
+
+
+def parse_mdstat(text):
+    """/proc/mdstat → {"md0": {state, level, disks, working, failed, spares, status, action, progress}}"""
+    arrays, cur = {}, None
+    for line in text.splitlines():
+        m = MD_ARRAY.match(line)
+        if m:
+            name, state, rest = m.groups()
+            parts = rest.split()
+            level = parts[0] if parts and not re.match(r"\w+\[\d+\]", parts[0]) else "?"
+            members = re.findall(r"\w+\[\d+\](\(\w\))?", rest)
+            cur = arrays[name] = {"state": state, "level": level, "disks": len(members), "working": None,
+                                  "failed": members.count("(F)"), "spares": members.count("(S)"),
+                                  "status": "", "action": None, "progress": None}
+        elif cur is not None:
+            counts = re.search(r"\[(\d+)/(\d+)\]\s+\[([U_]+)\]", line)
+            if counts:
+                cur["disks"], cur["working"], cur["status"] = int(counts.group(1)), int(counts.group(2)), \
+                    counts.group(3)
+            action = re.search(r"\b(recovery|resync|check|reshape|repair)\s*=\s*([\d.]+)%", line)
+            if action:
+                cur["action"], cur["progress"] = action.group(1), float(action.group(2))
+            if not line.strip():
+                cur = None
+    return arrays
+
+
+def zfs_date(text):
+    m = re.search(r"(\w{3} \w{3} +\d+ \d\d:\d\d:\d\d \d{4})", text)
+    try:
+        return datetime.strptime(" ".join(m.group(1).split()), "%a %b %d %H:%M:%S %Y").timestamp()
+    except (AttributeError, ValueError):
+        return None
+
+
+def parse_zpool_status(out):
+    """`zpool status <pool>` → {health, errors, action, progress, scrub: like parse_scrub()}"""
+    health = re.search(r"^\s*state:\s*(\S+)", out, re.M)
+    errors = re.search(r"^errors:\s*(.+)$", out, re.M)
+    scan = re.search(r"^\s*scan:\s*(.+)$", out, re.M)
+    scan = scan.group(1).strip() if scan else ""
+    progress = re.search(r"([\d.]+)% done", out)
+    progress = float(progress.group(1)) if progress else None
+    scrub, action = {"started": None, "status": None, "errors": None}, None
+    if scan.startswith("scrub repaired"):
+        n = re.search(r"with (\d+) errors", scan)
+        found = int(n.group(1)) if n else 0
+        scrub = {"started": zfs_date(scan), "status": "finished",
+                 "errors": "no errors found" if found == 0 else f"{found} errors"}
+    elif scan.startswith("scrub in progress"):
+        scrub = {"started": zfs_date(scan), "status": "running",
+                 "errors": f"{progress:g} % done" if progress is not None else "in progress"}
+        action = "scrub"
+    elif scan.startswith("scrub canceled"):
+        scrub = {"started": zfs_date(scan), "status": "canceled", "errors": "canceled"}
+    if scan.startswith("resilver in progress"):
+        action = "resilver"
+    return {"health": health.group(1) if health else "?", "errors": errors.group(1).strip() if errors else "?",
+            "action": action, "progress": progress if action else None, "scrub": scrub}
 
 
 def parse_scrub(out):

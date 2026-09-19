@@ -124,12 +124,19 @@ def storage_panel(cfg, d):
             t = f"  {temp(e['temp'], 60, 70)}" if s["temp_sensor"] else ""
             lines.append(row(e["label"], f"{bar(pct, level(pct, s['warn'], s['crit']))}"
                                          f"  {size(e['used'])} / {size(e['total'])}{t}"))
-    fs = [s for s in cfg["storage"] if s["btrfs"]]
+    fs = [s for s in cfg["storage"] if s["btrfs"] or s["mdadm"] or s["zfs"]]
     for s in fs:
-        label = "btrfs" if len(fs) == 1 else f"{s['label']} fs"
-        b = (btrfs or {}).get(s["path"])
+        kind = "btrfs" if s["btrfs"] else "mdadm" if s["mdadm"] else "zfs"
+        label = kind if len(fs) == 1 else f"{s['label']} fs"
+        b = (d.get(kind) or {}).get(s["path"])
         if b is None:
             lines.append(row(label, NO_DATA))
+            continue
+        if "error" in b:
+            lines.append(row(label, f"{RED}! {b['error']}{RESET}"))
+            continue
+        if kind != "btrfs":
+            lines.append(row(label, (md_row if kind == "mdadm" else zfs_row)(s, b)))
             continue
         degraded = any(e["degraded"] for e in st or [] if e["path"] == s["path"])
         count = f"{b['devices']}/{s['devices']} disks" if s["devices"] else f"{b['devices']} disks"
@@ -144,6 +151,33 @@ def storage_panel(cfg, d):
         lines.append(row(disk["dev"], f"{disk['serial']}   {temp(disk['temp'], dk['warn'], dk['crit'])}"
                                       f"   {color}SMART {health}{RESET}"))
     return lines
+
+
+def md_row(s, m):
+    if m["state"] != "active":
+        spares = f" · {m['spares']} spare" if m["spares"] else ""
+        return f"{dot(RED)} {RED}{m['state'].upper()}{RESET} · {m['disks']} disks{spares}"
+    # Kept short: it shares a half-width column. Failed members are named in the banner (live_problems).
+    working = m["working"] if m["working"] is not None else m["disks"] - m["failed"]
+    degraded = working < m["disks"] or m["failed"]
+    wrong_count = s["devices"] and m["disks"] != s["devices"]
+    color = RED if degraded or wrong_count else YELLOW if m["action"] else GREEN
+    status = f" [{m['status']}]" if degraded and m["status"] else ""
+    parts = [m["level"], f"DEGRADED {working}/{m['disks']}{status}" if degraded else f"{working}/{m['disks']} disks"]
+    if wrong_count:
+        parts.append(f"expected {s['devices']}")
+    if m["action"]:
+        parts.append(f"{m['action']} {m['progress']:.0f} %")
+    return f"{dot(color)} {' · '.join(parts)}"
+
+
+def zfs_row(s, z):
+    data_ok = z["errors"] == "No known data errors"
+    color = RED if z["health"] != "ONLINE" or not data_ok else YELLOW if z["action"] == "resilver" else GREEN
+    action = f" · {z['action']} {z['progress']:.0f} %" if z["action"] == "resilver" and z["progress"] is not None \
+        else " · resilvering" if z["action"] == "resilver" else ""
+    errors = "no data errors" if data_ok else z["errors"].split(",")[0]  # "2 data errors, use '-v' for a list"
+    return f"{dot(color)} {z['pool']} {z['health']}{action} · {errors}"
 
 
 def power_panel(cfg, d):
@@ -223,7 +257,8 @@ def backups_panel(cfg, d, now):
     scrubbed = [s for s in cfg["storage"] if s["scrub"]]
     for s in scrubbed:
         label = "Scrub" if len(scrubbed) == 1 else f"Scrub {s['label']}"
-        sc = scrubs.get(s["path"]) or {}
+        sc = scrubs.get(s["path"]) if s["btrfs"] else ((d.get("zfs") or {}).get(s["path"]) or {}).get("scrub")
+        sc = sc or {}
         if sc.get("started"):
             clean = sc.get("status") == "finished" and sc.get("errors") == "no errors found"
             running = sc.get("status") == "running"
@@ -305,6 +340,21 @@ def live_problems(cfg, d):
     for path, b in (d.get("btrfs") or {}).items():
         if b["missing"] or b["errors"]:
             out.append(f"btrfs {path}: {'device missing' if b['missing'] else 'device errors'}")
+    for path, m in (d.get("mdadm") or {}).items():
+        if "error" in m:
+            out.append(f"mdadm {path}: {m['error']}")
+        elif m["state"] != "active":
+            out.append(f"mdadm {path}: array {m['state']}")
+        elif m["failed"] or (m["working"] is not None and m["working"] < m["disks"]):
+            failed = f", {m['failed']} failed" if m["failed"] else ""
+            out.append(f"mdadm {path}: degraded ({m['working']}/{m['disks']} disks{failed})")
+    for path, z in (d.get("zfs") or {}).items():
+        if "error" in z:
+            out.append(f"zfs {path}: {z['error']}")
+        elif z["health"] != "ONLINE":
+            out.append(f"zfs pool {z['pool']} is {z['health']}")
+        elif z["errors"] != "No known data errors":
+            out.append(f"zfs pool {z['pool']}: {z['errors'].split(',')[0]}")
     out += [f"disk {x['dev']} SMART FAILED" for x in d.get("disks") or [] if x["health"] == "FAILED"]
     return out
 
