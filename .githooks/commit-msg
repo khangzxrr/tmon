@@ -1,0 +1,25 @@
+#!/bin/sh
+# Commit messages must start with a type: "type(scope)!: subject" (Conventional Commits).
+#   feat / feature  new behaviour        fix       bug fix             docs   README, examples, comments
+#   refactor        same behaviour       perf      faster / lighter    test   tests only
+#   style           formatting only      build     packaging, install.sh  ci  GitHub workflows
+#   chore           anything else        revert    undo a commit
+# (scope) is optional, e.g. "fix(traffic): …"; "!" marks a breaking change (config key renamed, flag removed).
+# Git's own "Merge …", "Revert …", "fixup! …" and "squash! …" messages are accepted.
+# Enable once per clone: git config core.hooksPath .githooks — CI runs the same check on every push and PR.
+# Usage: commit-msg <file with the message>
+TYPES='feat|feature|fix|docs|refactor|perf|test|style|build|ci|chore|revert'
+
+subject=$(grep -v '^#' "$1" | sed -n '/[^[:space:]]/{p;q;}')
+case $subject in
+  "Merge "* | "Revert \""* | "fixup! "* | "squash! "* | "amend! "*) exit 0 ;;
+esac
+if printf '%s\n' "$subject" | grep -Eq "^($TYPES)(\([a-z0-9._/-]+\))?!?: [^ ].*"; then
+  exit 0
+fi
+cat >&2 <<MSG
+commit message must look like "type(scope): subject", e.g. "fix(traffic): follow rotated logs"
+  types: $(printf '%s' "$TYPES" | sed 's/|/, /g')   ·   (scope) optional   ·   "!" before ":" = breaking change
+  got:   $subject
+MSG
+exit 1

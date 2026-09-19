@@ -1,0 +1,29 @@
+name: commit messages
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  conventional:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: every new commit starts with a type (feat, fix, chore, …)
+        env:
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -n "$BASE" ]; then range="$BASE..$HEAD"                        # pull request
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = 0000000000000000000000000000000000000000 ]; then
+            range="$HEAD --not $(git for-each-ref --format='%(refname)' refs/remotes/origin | grep -v "/${GITHUB_REF_NAME}\$")"
+          else range="$BEFORE..$HEAD"; fi                                       # push
+          bad=0
+          for c in $(git rev-list --no-merges $range); do
+            git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg"
+            .githooks/commit-msg "$RUNNER_TEMP/msg" || { echo "  in $(git log -1 --format='%h %an' "$c")"; bad=1; }
+          done
+          exit $bad

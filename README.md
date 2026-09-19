@@ -151,6 +151,12 @@ python3 -m unittest           # from the repo root
 python3 -m tmon --demo --once --size 80x24
 ```
 
+**Commit messages** start with a type — `feat`/`feature`, `fix`, `docs`, `refactor`, `perf`, `test`, `style`, `build`,
+`ci`, `chore`, `revert` — and an optional scope: `fix(traffic): follow rotated logs`; `!` before `:` marks a breaking
+change. Enable the local check once per clone with `git config core.hooksPath .githooks`; the
+[commit messages](.github/workflows/commit-messages.yml) workflow rejects non-conforming commits on every push and pull
+request.
+
 `tmon/render.py` is pure (snapshot in, lines out), `collect.py` gathers data in background threads, `traffic.py`
 follows the access log across rotations, `cli.py` owns the terminal. `demo.py` feeds the renderer fake data.
 
