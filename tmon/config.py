@@ -13,7 +13,7 @@ DEFAULTS = {
     "health": {"command": "", "interval_minutes": 5.0, "timeout": 300.0},
     "network": {"public_ip_url": ""},
     "storage": [{"label": "Root", "path": "/"}],
-    "disks": {"glob": [], "warn": 45, "crit": 50},
+    "disks": {"glob": [], "warn": 45, "crit": 50, "compact_above": 4},
     "ups": {"name": "", "on_battery_note": ""},
     "docker": {"enabled": "auto", "projects": {}},
     "frigate": {"container": "", "url": "http://127.0.0.1:5000/api/stats"},
