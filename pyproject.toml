@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tmon"
+dynamic = ["version"]
+description = "Full-screen terminal status monitor for home servers and NAS boxes: health, storage, UPS, containers, backups and live web traffic"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "khangzxrr" }]
+classifiers = ["Environment :: Console", "Operating System :: POSIX :: Linux", "Topic :: System :: Monitoring"]
+
+[project.scripts]
+tmon = "tmon.cli:main"
+
+[tool.setuptools]
+packages = ["tmon"]
+
+[tool.setuptools.dynamic]
+version = { attr = "tmon.__version__" }

@@ -1,0 +1,88 @@
+# tmon configuration. Every section is optional: delete what you don't have.
+# Check it with:  tmon --check-config   ·   preview with:  sudo tmon --once
+# Sections that need root to show everything: [[storage]] btrfs, [disks] (smartctl), [health] (usually).
+
+[general]
+title = ""                  # header name; "" = hostname
+refresh = 2                 # seconds between redraws
+cpu_sensor = ""             # hwmon name for the CPU temperature; "" = try coretemp, k10temp, zenpower, cpu_thermal
+# Kiosk mode only (tmon --kiosk on tty1):
+night = "23:00-06:00"       # monitor off during this time ("" = always on); any key wakes it, problems keep it on
+wake_minutes = 5            # how long a key press wakes the monitor at night
+font = "Lat15-TerminusBold32x16"  # console font (ls /usr/share/consolefonts); 1920×1080 → 120×33 characters
+
+[health]
+# A command printing one line per check that starts with OK, WARN or FAIL (colour codes are ignored).
+# FAIL/WARN lines appear under the banner; a non-zero exit without FAIL lines counts as one problem.
+# Without a command, the banner shows what tmon sees itself: stopped containers, UPS on battery,
+# unmounted/degraded filesystems, btrfs device errors, failed SMART.
+command = ""                # e.g. "/usr/local/bin/health-check.sh"
+interval_minutes = 5        # also runs at once when something visibly breaks, and on the r key
+timeout = 300
+
+[network]
+public_ip_url = ""          # e.g. "https://1.1.1.1/cdn-cgi/trace" to show the public IP (checked every 15 min)
+
+# One [[storage]] per filesystem. Without any, tmon shows "/" as "Root".
+[[storage]]
+label = "Data"
+path = "/srv/data"
+require_mount = true        # red "NOT MOUNTED" if nothing is mounted there
+btrfs = true                # RAID profile, device count, `btrfs device stats` errors, degraded mount
+devices = 2                 # expected btrfs devices (0 = don't check)
+scrub = true                # last `btrfs scrub` in the BACKUPS panel
+warn = 85                   # usage % turning yellow / red
+crit = 95
+
+[[storage]]
+label = "System"
+path = "/"
+temp_sensor = "nvme"        # hwmon name for a temperature next to the bar
+
+[disks]
+# SMART health + temperature per disk (smartctl -n standby: a sleeping disk is never woken up).
+glob = ["/dev/disk/by-id/ata-*"]
+warn = 45                   # °C
+crit = 50
+
+[ups]
+name = ""                   # NUT UPS, e.g. "myups@localhost" (upsc)
+on_battery_note = ""        # shown after "ON BATTERY", e.g. "shutdown in 5 min"
+
+[docker]
+enabled = "auto"            # true / false / "auto" (= if the docker command exists)
+# Compose project → label, in screen order. Empty = every compose project plus standalone containers.
+# A group is green when all its containers run, yellow while a health check is starting, red otherwise.
+projects = {}               # e.g. { nextcloud = "Nextcloud", immich = "Immich", caddy = "Caddy" }
+
+[frigate]
+container = ""              # Frigate container name → frames per second per camera
+url = "http://127.0.0.1:5000/api/stats"
+
+# "Is it recent?" rows in the BACKUPS panel: newest match of a glob, or a stamp file.
+[[freshness]]
+label = "Nightly"
+glob = "/srv/data/backups/*"
+name_format = "%Y-%m-%d_%H%M"   # time from the file name (strptime); "" = modification time
+max_age_hours = 26              # older → red
+level = "crit"
+
+[[freshness]]
+label = "Off-site"
+stamp = "/var/lib/offsite/last-success"   # unix timestamp inside, or else the file's modification time
+max_age_hours = 720
+level = "warn"                            # older → yellow
+
+[timers]
+# systemd timers in the NEXT panel: unit → label, or a pattern listing all matching units.
+units = {}                  # e.g. { "backup.timer" = "Backup", "fstrim.timer" = "TRIM" }
+pattern = ""                # e.g. "backup-*"
+
+[traffic]
+# Live list of web requests from a reverse-proxy access log (the last few minutes, grouped, newest first).
+access_log = ""             # e.g. "/var/log/caddy/access.log"
+format = "caddy"            # "caddy" (JSON, `log { output file … }`) or "combined" (nginx/Apache default)
+site = ""                   # label for "combined" logs, which have no host name
+window_minutes = 5
+internal = ["127.0.0.0/8", "::1/128", "172.16.0.0/12"]  # hidden: the host itself and containers
+show_internal = false

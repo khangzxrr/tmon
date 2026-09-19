@@ -1,0 +1,24 @@
+[Unit]
+Description=tmon status screen on the local monitor (tty1)
+Documentation=https://github.com/khangzxrr/tmon
+# tty1 belongs to tmon instead of a login prompt (install.sh --kiosk disables getty@tty1);
+# Alt+F2 … F6 still give a normal login.
+Conflicts=getty@tty1.service
+After=getty@tty1.service systemd-user-sessions.service console-setup.service docker.service nut-monitor.service
+
+[Service]
+ExecStart=/usr/local/bin/tmon --kiosk
+Environment=TERM=linux
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+Restart=always
+RestartSec=5
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target
