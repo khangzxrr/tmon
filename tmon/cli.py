@@ -11,7 +11,7 @@ import termios
 import time
 from datetime import datetime
 
-from . import __version__, config, demo, render
+from . import __version__, config, demo, render, service
 from .collect import LiveSource, log, read
 
 
@@ -127,6 +127,11 @@ def main(argv=None):
     mode.add_argument("--once", action="store_true", help="print one frame to stdout and exit")
     mode.add_argument("--kiosk", action="store_true", help="own a Linux console (tty1): for tmon.service")
     mode.add_argument("--check-config", action="store_true", help="validate the config and list the panels")
+    mode.add_argument("--enable-kiosk", action="store_true",
+                      help="run tmon on a console (--tty) at boot instead of its login prompt: writes, enables and "
+                           "starts tmon.service (root)")
+    mode.add_argument("--disable-kiosk", action="store_true", help="remove tmon.service, login prompt back (root)")
+    ap.add_argument("--tty", default="tty1", help="with --enable-kiosk: the console to take over (default: tty1)")
     ap.add_argument("--demo", action="store_true", help="made-up data for every panel")
     ap.add_argument("--no-health", action="store_true", help="with --once: skip the health command")
     ap.add_argument("--no-color", action="store_true", help="plain text (also: NO_COLOR=1)")
@@ -134,6 +139,11 @@ def main(argv=None):
     ap.add_argument("--version", action="version", version=f"tmon {__version__}")
     args = ap.parse_args(argv)
 
+    if args.disable_kiosk:
+        try:
+            return service.Systemd().disable()
+        except (service.ServiceError, OSError) as e:
+            sys.exit(f"tmon: {e}")
     try:
         cfg, path = (demo.config_(), "(demo)") if args.demo else config.load(args.config)
     except config.ConfigError as e:
@@ -144,6 +154,14 @@ def main(argv=None):
               f"{', traffic' if cfg['traffic']['access_log'] else ''}")
         print(f"health: {cfg['health']['command'] or 'off (alerts from live data only)'}")
         return
+    if args.enable_kiosk:
+        cmd, workdir = service.command()
+        # The service runs exactly what was just validated: this tmon, this config (or the demo).
+        cmd += ["--kiosk"] + (["--demo"] if args.demo else ["-c", os.path.abspath(path)] if path else [])
+        try:
+            return service.Systemd().enable(args.tty, cmd, workdir)
+        except (service.ServiceError, OSError) as e:
+            sys.exit(f"tmon: {e}")
     color = not args.no_color and "NO_COLOR" not in os.environ
     source = demo.DemoSource(cfg) if args.demo else LiveSource(cfg)
 
