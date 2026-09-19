@@ -98,9 +98,9 @@ Keys: `q` quit · `r` run the health check now. Needs at least ~100 columns for 
 ## Install
 
 ```bash
-sudo ./install.sh             # /usr/local/bin/tmon + /etc/tmon/config.toml (kept if it exists) + tmon.service
-sudo ./install.sh --kiosk     # … and show it on the local monitor (tty1) instead of the login prompt
-sudo ./install.sh --no-kiosk  # tty1 back to a login prompt
+sudo ./install.sh             # /usr/local/bin/tmon + /etc/tmon/config.toml (kept if it exists)
+sudo ./install.sh --kiosk     # … and show it on the local monitor (tty1): runs tmon --enable-kiosk
+sudo ./install.sh --no-kiosk  # tty1 back to a login prompt: runs tmon --disable-kiosk
 sudo ./install.sh --uninstall
 ```
 
@@ -166,7 +166,19 @@ Behind NAT hairpinning, LAN clients using the public name all appear as your rou
 
 ## Kiosk mode (monitor on the server)
 
-`tmon --kiosk` is meant to be started by [`systemd/tmon.service`](systemd/tmon.service) on **tty1**:
+```bash
+sudo tmon --enable-kiosk             # tty1 shows tmon from now on, also after a reboot
+sudo tmon --enable-kiosk --tty tty2  # another console (tty1 gets its login prompt back if it had tmon)
+sudo tmon --disable-kiosk            # remove it; the console shows a login prompt again
+```
+
+`--enable-kiosk` checks the config, writes `/etc/systemd/system/tmon.service`, disables that console's login prompt
+(`getty@tty1`: both would start at boot and conflict), enables and starts the service, and shows the journal if it
+doesn't stay up. The service runs **the same tmon and the same config** you ran the command with: the installed
+`tmon`, or `python3 -m tmon` from your checkout, with `-c <that config>` (or `--demo` for a showroom screen). Run it
+again after moving the checkout or the config. It works with any install method and needs systemd.
+
+On the console:
 
 - The console has **no shell**: Ctrl-C/Z/S do nothing, `r` re-runs the health check. **Alt+F2 … F6** are normal login
   consoles, Alt+F1 returns.
