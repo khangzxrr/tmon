@@ -164,6 +164,9 @@ change. Enable the local checks (commit message, and tests + coverage before a p
 [commit messages](.github/workflows/commit-messages.yml) workflow rejects non-conforming commits on every push and pull
 request.
 
+`main` is protected: changes land through pull requests once the `conventional`, `unittest (3.11)` and
+`unittest (3.13)` checks pass on a branch that is up to date with `main`. No force-pushes.
+
 `tmon/render.py` is pure (snapshot in, lines out), `collect.py` gathers data in background threads, `traffic.py`
 follows the access log across rotations, `cli.py` owns the terminal. `demo.py` feeds the renderer fake data.
 
