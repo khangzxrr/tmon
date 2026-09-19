@@ -131,6 +131,10 @@ TOML
 k3s)
   curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=metrics-server" sh -
   k3s kubectl wait --for=condition=Ready node --all --timeout=180s
+  for _ in $(seq 60); do # the CoreDNS pod only exists once k3s has applied its manifests
+    [[ -n $(k3s kubectl -n kube-system get pods -l k8s-app=kube-dns -o name) ]] && break
+    sleep 3
+  done
   k3s kubectl -n kube-system wait --for=condition=Ready pod -l k8s-app=kube-dns --timeout=180s
   config <<TOML
 [docker]
