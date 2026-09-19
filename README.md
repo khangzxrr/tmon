@@ -66,12 +66,12 @@ sudo python3 -m tmon --once   # print one frame and exit
 **Linux and Python ≥ 3.10** — nothing else to try it. A config file needs **Python ≥ 3.11** (`tomllib`); on 3.10
 (Ubuntu 22.04) tmon runs with its defaults and says so if it finds a config file.
 
-| Distribution | `python3` | |
+| Distribution | `python3` | Works |
 |---|---|---|
-| Debian 12 / 13 | 3.11 / 3.13 | ✅ |
-| Ubuntu 24.04 | 3.12 | ✅ |
-| Ubuntu 22.04 | 3.10 | ✅ defaults and `--demo`; no config file |
-| Arch, Fedora | current | ✅ |
+| Debian 12 / 13 | 3.11 / 3.13 | yes |
+| Ubuntu 24.04 | 3.12 | yes |
+| Ubuntu 22.04 | 3.10 | defaults and `--demo` only, no config file |
+| Arch, Fedora | current | yes |
 
 Panels call system tools only when they are configured; a missing tool shows `no data`, nothing breaks:
 
