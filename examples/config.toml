@@ -1,5 +1,5 @@
 # tmon configuration. Every section is optional: delete what you don't have.
-# Check it with:  tmon --check-config   ·   preview with:  sudo tmon --once
+# Check it with:  tmon --check-config   ·   preview with:  sudo tmon --once   ·   needs Python ≥ 3.11 (tomllib)
 # Sections that need root to show everything: [[storage]] btrfs, [disks] (smartctl), [health] (usually).
 
 [general]
@@ -9,7 +9,8 @@ cpu_sensor = ""             # hwmon name for the CPU temperature; "" = try coret
 # Kiosk mode only (tmon --kiosk on tty1):
 night = "23:00-06:00"       # monitor off during this time ("" = always on); any key wakes it, problems keep it on
 wake_minutes = 5            # how long a key press wakes the monitor at night
-font = "Lat15-TerminusBold32x16"  # console font (ls /usr/share/consolefonts); 1920×1080 → 120×33 characters
+font = "Lat15-TerminusBold32x16"  # console font; 1920×1080 → 120×33 characters. Debian/Ubuntu name (console-setup,
+                            # /usr/share/consolefonts); Arch/Fedora: "ter-v32b" from the Terminus font package
 
 [health]
 # A command printing one line per check that starts with OK, WARN or FAIL (colour codes are ignored).

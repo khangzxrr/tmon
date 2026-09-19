@@ -45,7 +45,8 @@ browser — ≈ 15 MB RAM, ~0 % CPU) with the monitor switched off at night.
 
 *(`tmon --demo`: made-up data. The real thing is in colour: green/yellow/red dots, bars and banner.)*
 
-- **Python ≥ 3.11 standard library only.** No pip dependencies; installs as a single executable file.
+- **Python standard library only.** Nothing to `pip install`; installs as a single executable file. Any Linux
+  distribution (it reads `/proc` and `/sys`): [requirements](#requirements).
 - **Read-only.** It runs `docker ps`, `upsc`, `smartctl -n standby` (never wakes a sleeping disk), `btrfs … show/stats`,
   `systemctl list-timers` and your health-check command; it changes nothing.
 - **Degrades gracefully.** A missing tool or permission shows `no data` in that row and a line in the journal/stderr.
@@ -59,6 +60,37 @@ python3 -m tmon --demo        # every panel, fake data
 python3 -m tmon               # your machine: system, "/" and Docker containers without any config
 sudo python3 -m tmon --once   # print one frame and exit
 ```
+
+## Requirements
+
+**Linux and Python ≥ 3.10** — nothing else to try it. A config file needs **Python ≥ 3.11** (`tomllib`); on 3.10
+(Ubuntu 22.04) tmon runs with its defaults and says so if it finds a config file.
+
+| Distribution | `python3` | |
+|---|---|---|
+| Debian 12 / 13 | 3.11 / 3.13 | ✅ |
+| Ubuntu 24.04 | 3.12 | ✅ |
+| Ubuntu 22.04 | 3.10 | ✅ defaults and `--demo`; no config file |
+| Arch, Fedora | current | ✅ |
+
+Panels call system tools only when they are configured; a missing tool shows `no data`, nothing breaks:
+
+| Panel | Tool | Debian / Ubuntu | Arch | Fedora |
+|---|---|---|---|---|
+| Services, Cameras | `docker` | `docker.io` (or Docker's repo) | `docker` | Docker's repo |
+| Power | `upsc` | `nut-client` | `nut` | `nut-client` |
+| Storage: SMART | `smartctl` | `smartmontools` | `smartmontools` | `smartmontools` |
+| Storage: btrfs, Scrub | `btrfs` | `btrfs-progs` | `btrfs-progs` | `btrfs-progs` |
+| Next | `systemctl` | systemd | systemd | systemd |
+| Kiosk mode | `setterm`, `setfont` | `util-linux`, `kbd` | `util-linux`, `kbd` | `util-linux`, `kbd` |
+
+`install.sh` and kiosk mode need **systemd**. Without it (Alpine, Void, …) tmon still runs in a terminal; only the timers
+panel and the tty1 service don't apply.
+
+**Kiosk font names differ per distribution.** The example `Lat15-TerminusBold32x16` comes with Debian/Ubuntu's
+`console-setup`. On Arch and Fedora install Terminus (`pacman -S terminus-font`, `dnf install terminus-fonts-console`)
+and use `ter-v32b`. A font that doesn't exist only leaves the default tiny font; `ls /usr/share/consolefonts
+/usr/share/kbd/consolefonts 2>/dev/null` lists what you have.
 
 Keys: `q` quit · `r` run the health check now. Needs at least ~100 columns for the two-column layout
 (narrower terminals stack the panels).
@@ -153,7 +185,7 @@ pip install coverage && python3 -m coverage run -m unittest && python3 -m covera
 ```
 
 **Test coverage must stay ≥ 90 %** (lines and branches, `fail_under` in `pyproject.toml`): the
-[tests](.github/workflows/tests.yml) workflow fails below it on Python 3.11 and 3.13, and the `pre-push` hook checks it
+[tests](.github/workflows/tests.yml) workflow fails below it on Python 3.10, 3.11 and 3.13, and the `pre-push` hook checks it
 before every push. Collectors are tested against stub commands on `PATH` (`tests/test_sources.py`), the terminal modes
 with the terminal calls mocked (`tests/test_cli.py`).
 
@@ -164,8 +196,8 @@ change. Enable the local checks (commit message, and tests + coverage before a p
 [commit messages](.github/workflows/commit-messages.yml) workflow rejects non-conforming commits on every push and pull
 request.
 
-`main` is protected: changes land through pull requests once the `conventional`, `unittest (3.11)` and
-`unittest (3.13)` checks pass on a branch that is up to date with `main`. No force-pushes.
+`main` is protected: changes land through pull requests once the `conventional`, `unittest (3.10)`,
+`unittest (3.11)` and `unittest (3.13)` checks pass on a branch that is up to date with `main`. No force-pushes.
 
 `tmon/render.py` is pure (snapshot in, lines out), `collect.py` gathers data in background threads, `traffic.py`
 follows the access log across rotations, `cli.py` owns the terminal. `demo.py` feeds the renderer fake data.
