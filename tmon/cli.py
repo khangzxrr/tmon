@@ -16,11 +16,13 @@ from .collect import LiveSource, log, read
 
 
 def output(lines, color, positioned):
+    if not color:
+        lines = [render.ANSI.sub("", l) for l in lines]
     if positioned:  # absolute positioning per row: stray kernel messages get overwritten, nothing scrolls
         text = "".join(f"\033[{i + 1};1H{l}" for i, l in enumerate(lines))
     else:
         text = "\n".join(l.rstrip() for l in lines) + "\n"
-    return text if color else render.ANSI.sub("", text)
+    return text
 
 
 def in_night(night, now):
