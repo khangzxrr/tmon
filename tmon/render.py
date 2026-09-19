@@ -90,7 +90,7 @@ def title(text, extra=""):
 
 
 def row(label, content):
-    return f" {GRAY}{label:<11}{RESET}{content}"
+    return f" {GRAY}{label:<10}{RESET} {content}"  # long labels push the content right but never touch it
 
 
 NO_DATA = f"{GRAY}no data{RESET}"
