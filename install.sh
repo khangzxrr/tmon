@@ -9,7 +9,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 BIN=/usr/local/bin/tmon UNIT=/etc/systemd/system/tmon.service
 
-python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' || { echo "tmon needs Python ≥ 3.11" >&2; exit 1; }
+python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' || { echo "tmon needs Python ≥ 3.10" >&2; exit 1; }
+# Python 3.10 (Ubuntu 22.04) has no tomllib: tmon runs with its defaults but cannot read a config file.
+toml=yes
+python3 -c 'import tomllib' 2>/dev/null || toml=no
 
 no_kiosk() {
   if [[ -f $UNIT ]]; then systemctl disable --now tmon.service 2>/dev/null || true; fi
@@ -39,7 +42,10 @@ find "$build/src" -name __pycache__ -prune -exec rm -rf {} +
 python3 -m zipapp "$build/src" -m tmon.cli:main -p '/usr/bin/env python3' -o "$build/tmon"
 install -m 755 "$build/tmon" "$BIN"
 install -m 644 systemd/tmon.service "$UNIT"
-if [[ ! -e /etc/tmon/config.toml ]]; then
+if [[ $toml == no ]]; then
+  echo "Python $(python3 -c 'import sys; print(*sys.version_info[:2], sep=".")') cannot read config files (needs 3.11):" \
+    "tmon runs with its defaults; /etc/tmon/config.toml not written" >&2
+elif [[ ! -e /etc/tmon/config.toml ]]; then
   install -d /etc/tmon
   install -m 644 examples/config.toml /etc/tmon/config.toml
   echo "wrote /etc/tmon/config.toml — edit it, then: tmon --check-config"

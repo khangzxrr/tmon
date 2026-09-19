@@ -8,14 +8,15 @@ jobs:
   unittest:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false  # every Python version reports its own result
       matrix:
-        python: ["3.11", "3.13"]
+        python: ["3.10", "3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install coverage  # test tool only; tmon itself stays standard-library only
+      - run: pip install "coverage[toml]"  # test tool only (tmon stays stdlib-only); [toml] reads pyproject.toml on 3.10
       - name: tests with coverage ≥ 90 % (fail_under in pyproject.toml)
         run: |
           coverage run -m unittest -v

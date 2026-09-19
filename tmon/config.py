@@ -2,7 +2,7 @@
 system panel, the root filesystem and Docker containers (if Docker is installed)."""
 import os
 import shutil
-import tomllib
+import sys
 
 # A new key goes in DEFAULTS/ENTRY_DEFAULTS, examples/config.toml and the README. Unknown keys are errors on purpose
 # (typo detection).
@@ -105,10 +105,19 @@ def load(path=None):
         return merge({}), None
     try:
         with open(path, "rb") as f:
-            return merge(tomllib.load(f)), path
+            data = f.read()
     except OSError as e:
         raise ConfigError(f"{path}: {e.strerror}") from None
-    except tomllib.TOMLDecodeError as e:
+    # tomllib arrived in Python 3.11. Importing it only here lets 3.10 (Ubuntu 22.04) run --demo and the defaults.
+    try:
+        import tomllib
+    except ImportError:
+        raise ConfigError(f"{path}: reading a config file needs Python 3.11 or newer (this is "
+                          f"{sys.version_info.major}.{sys.version_info.minor}); without a config file tmon runs "
+                          f"with its defaults") from None
+    try:
+        return merge(tomllib.loads(data.decode())), path
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as e:
         raise ConfigError(f"{path}: {e}") from None
 
 
