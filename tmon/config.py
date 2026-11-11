@@ -104,7 +104,7 @@ def normalize(cfg):
     if night:
         try:
             parse_night(night)
-        except ValueError:
+        except (ValueError, IndexError):
             raise ConfigError(f'[general] night must look like "23:00-06:00", got {night!r}') from None
     return cfg
 
