@@ -61,6 +61,11 @@ class ConfigTest(unittest.TestCase):
     def test_parse_night(self):
         self.assertEqual(config.parse_night("23:00-06:30"), (1380, 390))
 
+    def test_night_without_colon_is_config_error(self):
+        for bad in ("2300-0600", "23:00-0600", "23-06:30", "23:00"):
+            with self.assertRaises(config.ConfigError):
+                config.merge({"general": {"night": bad}})
+
 
 if __name__ == "__main__":
     unittest.main()
